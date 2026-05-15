@@ -1,0 +1,77 @@
+
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: pfa-backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - mosquitto
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/pfa
+      - PYTHONPATH=/app
+
+
+
+  frontend:
+    build:
+      context: ./dashboard-ui
+
+    container_name: pfa-frontend
+
+    ports:
+      - "5173:5173"
+
+    volumes:
+      - ./dashboard-ui:/app
+      - /app/node_modules
+
+    command: npm run dev -- --host
+
+    restart: always
+
+
+  db:
+    image: postgres:15
+    container_name: pfa-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pfa
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+
+  ml-service:
+    build:
+      context: .
+      dockerfile: ml_service/Dockerfile
+
+    container_name: ml-service
+
+    ports:
+      - "9000:9000"
+
+    volumes:
+      - .:/app
+
+    restart: always
+
+volumes:
+  pgdata:
+
+
+

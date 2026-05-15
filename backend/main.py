@@ -1,44 +1,93 @@
-# ENTRY POINT (FastAPI server)
-from fastapi import FastAPI, WebSocket, Depends
-from database.db import save_data, get_data
-from backend.auth import verify_token
+from fastapi import FastAPI, WebSocket
+from sqlalchemy.orm import Session
 
-app = FastAPI()
+from backend.database.db import engine, SessionLocal
+from backend.database.base import Base
+from backend.database.models import SensorData
 
-# -------------------------
-# ACTIVE WEBSOCKET CLIENTS
-# -------------------------
-clients = []
+from backend.api.auth import router as auth_router
 
-# -------------------------
-# MQTT / DEVICE DATA ENTRY
-# -------------------------
-@app.post("/data")
-def receive_data(data: dict, user=Depends(verify_token)):
+from backend.services.mqtt_service import start_mqtt
+from backend.services.stream import manager
 
-    if user["role"] not in ["device", "admin"]:
-        return {"error": "forbidden"}
+from backend.services.ml_client import get_prediction
+from backend.services.alert_service import send_alert
 
-    save_data(data)
+app = FastAPI(title="PFA Industrial Monitoring API")
 
-    # 🔥 PUSH TO ALL CLIENTS (REAL TIME)
-    for c in clients:
-        import asyncio
-        asyncio.create_task(c.send_json(data))
+# Create tables
+Base.metadata.create_all(bind=engine)
 
-    return {"status": "saved"}
+# Include auth routes
+app.include_router(auth_router)
 
-# -------------------------
-# STREAMING ENDPOINT
-# -------------------------
+# Start MQTT listener
+start_mqtt()
+
+
+@app.get("/")
+def home():
+    return {"status": "running"}
+
+
+# -----------------------------
+# WEBSOCKET
+# -----------------------------
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
 
-    await websocket.accept()
-    clients.append(websocket)
+    await manager.connect(websocket)
 
     try:
         while True:
             await websocket.receive_text()
+
     except:
-        clients.remove(websocket)
+        manager.disconnect(websocket)
+
+
+# -----------------------------
+# SENSOR DATA API
+# -----------------------------
+@app.post("/data")
+async def receive_data(data: dict):
+
+    db: Session = SessionLocal()
+
+    try:
+        # Save sensor data
+        sensor = SensorData(
+            machine_id=data["machine_id"],
+            temperature=data["temperature"],
+            vibration=data["vibration"]
+        )
+
+        db.add(sensor)
+        db.commit()
+
+        # ML prediction
+        result = get_prediction(data)
+
+        print("🧠 Prediction:", result)
+
+        # Alert if anomaly
+        if result["anomaly"] == 1:
+
+            send_alert(
+                message=f"⚠️ Anomaly detected on machine {result['machine_id']}",
+                severity="high"
+            )
+
+        # Broadcast realtime
+        await manager.broadcast({
+            "sensor": data,
+            "prediction": result
+        })
+
+        return {
+            "status": "success",
+            "prediction": result
+        }
+
+    finally:
+        db.close()
