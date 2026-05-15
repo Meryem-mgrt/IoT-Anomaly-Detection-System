@@ -1,39 +1,4 @@
-## TECHNOLOGY STACK
 
-### Backend
-FastAPI
-Uvicorn
-SQLAlchemy
-
-### Database
-PostgreSQL
-
-### Messaging
-Mosquitto MQTT
-
-### ML
-scikit-learn
-
-### Dashboard
-Streamlit
-
-### Streaming
-WebSockets
-
-### Security
-JWT
-bcrypt
-role-based access
-
-### Alerts
-Telegram Bot API
-SMTP email
-
-### Containers
-Docker Compose
-
-
-## INDUSTRIAL IoT AI SECURITY SYSTEM
 ESP32
    ↓ MQTT
 Mosquitto
